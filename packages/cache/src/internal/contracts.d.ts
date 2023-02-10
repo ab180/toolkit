@@ -31,3 +31,8 @@ export interface InternalCacheOptions {
   compressionMethod?: CompressionMethod
   cacheSize?: number
 }
+
+export interface S3CacheEntry {
+  objectKey: string;
+  cacheKey: string
+}

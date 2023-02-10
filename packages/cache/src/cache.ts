@@ -1,9 +1,10 @@
 import * as core from '@actions/core'
 import * as path from 'path'
 import * as utils from './internal/cacheUtils'
-import * as cacheHttpClient from './internal/cacheHttpClient'
+import * as cacheS3Client from './internal/cacheS3Client'
 import {createTar, extractTar, listTar} from './internal/tar'
 import {DownloadOptions, UploadOptions} from './options'
+import {createObjectKey} from "./internal/cacheS3Client";
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -50,7 +51,7 @@ function checkKey(key: string): void {
  */
 
 export function isFeatureAvailable(): boolean {
-  return !!process.env['ACTIONS_CACHE_URL']
+  return !!process.env['ACTIONS_CACHE_S3_BUCKET'] && !!process.env['ACTIONS_CACHE_S3_PREFIX']
 }
 
 /**
@@ -89,11 +90,11 @@ export async function restoreCache(
   let archivePath = ''
   try {
     // path are needed to compute version
-    const cacheEntry = await cacheHttpClient.getCacheEntry(keys, paths, {
+    const cacheEntry = await cacheS3Client.getCacheEntry(keys, paths, {
       compressionMethod
     })
 
-    if (!cacheEntry?.archiveLocation) {
+    if (!cacheEntry?.cacheKey) {
       // Cache not found
       return undefined
     }
@@ -105,7 +106,7 @@ export async function restoreCache(
     core.debug(`Archive Path: ${archivePath}`)
 
     // Download the cache from the cache entry
-    await cacheHttpClient.downloadCache(
+    await cacheS3Client.downloadCache(
       cacheEntry.archiveLocation,
       archivePath,
       options
@@ -188,46 +189,17 @@ export async function saveCache(
     if (core.isDebug()) {
       await listTar(archivePath, compressionMethod)
     }
-    const fileSizeLimit = 10 * 1024 * 1024 * 1024 // 10GB per repo limit
     const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath)
     core.debug(`File Size: ${archiveFileSize}`)
 
-    // For GHES, this check will take place in ReserveCache API with enterprise file size limit
-    if (archiveFileSize > fileSizeLimit && !utils.isGhes()) {
-      throw new Error(
-        `Cache size of ~${Math.round(
-          archiveFileSize / (1024 * 1024)
-        )} MB (${archiveFileSize} B) is over the 10GB limit, not saving cache.`
-      )
-    }
-
-    core.debug('Reserving Cache')
-    const reserveCacheResponse = await cacheHttpClient.reserveCache(
-      key,
+    const objectKey = createObjectKey(key,
       paths,
       {
         compressionMethod,
         cacheSize: archiveFileSize
-      }
-    )
-
-    if (reserveCacheResponse?.result?.cacheId) {
-      cacheId = reserveCacheResponse?.result?.cacheId
-    } else if (reserveCacheResponse?.statusCode === 400) {
-      throw new Error(
-        reserveCacheResponse?.error?.message ??
-          `Cache size of ~${Math.round(
-            archiveFileSize / (1024 * 1024)
-          )} MB (${archiveFileSize} B) is over the data cap limit, not saving cache.`
-      )
-    } else {
-      throw new ReserveCacheError(
-        `Unable to reserve cache with key ${key}, another job may be creating this cache. More details: ${reserveCacheResponse?.error?.message}`
-      )
-    }
-
-    core.debug(`Saving Cache (ID: ${cacheId})`)
-    await cacheHttpClient.saveCache(cacheId, archivePath, options)
+      })
+    core.debug(`Saving Cache (Object Key: ${objectKey})`)
+    await cacheS3Client.saveCache(objectKey, archivePath, options)
   } catch (error) {
     const typedError = error as Error
     if (typedError.name === ValidationError.name) {
@@ -246,5 +218,5 @@ export async function saveCache(
     }
   }
 
-  return cacheId
+  return 0
 }
