@@ -109,7 +109,7 @@ export async function restoreCache(
 
     // Download the cache from the cache entry
     await cacheS3Client.downloadCache(
-      cacheEntry.archiveLocation,
+      cacheEntry.objectKey,
       archivePath,
       options
     )
