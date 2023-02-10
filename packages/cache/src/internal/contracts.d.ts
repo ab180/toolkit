@@ -9,8 +9,14 @@ export interface ITypedResponseWithError<T> extends TypedResponse<T> {
 export interface ArtifactCacheEntry {
   cacheKey?: string
   scope?: string
+  cacheVersion?: string
   creationTime?: string
   archiveLocation?: string
+}
+
+export interface ArtifactCacheList {
+  totalCount: number
+  artifactCaches?: ArtifactCacheEntry[]
 }
 
 export interface CommitCacheRequest {
@@ -29,10 +35,16 @@ export interface ReserveCacheResponse {
 
 export interface InternalCacheOptions {
   compressionMethod?: CompressionMethod
+  enableCrossOsArchive?: boolean
   cacheSize?: number
 }
 
+export interface ArchiveTool {
+  path: string
+  type: string
+}
+
 export interface S3CacheEntry {
-  objectKey: string;
+  objectKey: string
   cacheKey: string
 }

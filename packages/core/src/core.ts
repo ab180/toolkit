@@ -1,10 +1,9 @@
 import {issue, issueCommand} from './command'
-import {issueCommand as issueFileCommand} from './file-command'
+import {issueFileCommand, prepareKeyValueMessage} from './file-command'
 import {toCommandProperties, toCommandValue} from './utils'
 
 import * as os from 'os'
 import * as path from 'path'
-import {v4 as uuidv4} from 'uuid'
 
 import {OidcClient} from './oidc-utils'
 
@@ -35,7 +34,7 @@ export enum ExitCode {
 }
 
 /**
- * Optional properties that can be sent with annotatation commands (notice, error, and warning)
+ * Optional properties that can be sent with annotation commands (notice, error, and warning)
  * See: https://docs.github.com/en/rest/reference/checks#create-a-check-run for more information about annotations.
  */
 export interface AnnotationProperties {
@@ -65,7 +64,7 @@ export interface AnnotationProperties {
   startColumn?: number
 
   /**
-   * The start column for the annotation. Cannot be sent when `startLine` and `endLine` are different values.
+   * The end column for the annotation. Cannot be sent when `startLine` and `endLine` are different values.
    * Defaults to `startColumn` when `startColumn` is provided.
    */
   endColumn?: number
@@ -87,26 +86,10 @@ export function exportVariable(name: string, val: any): void {
 
   const filePath = process.env['GITHUB_ENV'] || ''
   if (filePath) {
-    const delimiter = `ghadelimiter_${uuidv4()}`
-
-    // These should realistically never happen, but just in case someone finds a way to exploit uuid generation let's not allow keys or values that contain the delimiter.
-    if (name.includes(delimiter)) {
-      throw new Error(
-        `Unexpected input: name should not contain the delimiter "${delimiter}"`
-      )
-    }
-
-    if (convertedVal.includes(delimiter)) {
-      throw new Error(
-        `Unexpected input: value should not contain the delimiter "${delimiter}"`
-      )
-    }
-
-    const commandValue = `${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}`
-    issueFileCommand('ENV', commandValue)
-  } else {
-    issueCommand('set-env', {name}, convertedVal)
+    return issueFileCommand('ENV', prepareKeyValueMessage(name, val))
   }
+
+  issueCommand('set-env', {name}, convertedVal)
 }
 
 /**
@@ -170,7 +153,11 @@ export function getMultilineInput(
     .split('\n')
     .filter(x => x !== '')
 
-  return inputs
+  if (options && options.trimWhitespace === false) {
+    return inputs
+  }
+
+  return inputs.map(input => input.trim())
 }
 
 /**
@@ -203,8 +190,13 @@ export function getBooleanInput(name: string, options?: InputOptions): boolean {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function setOutput(name: string, value: any): void {
+  const filePath = process.env['GITHUB_OUTPUT'] || ''
+  if (filePath) {
+    return issueFileCommand('OUTPUT', prepareKeyValueMessage(name, value))
+  }
+
   process.stdout.write(os.EOL)
-  issueCommand('set-output', {name}, value)
+  issueCommand('set-output', {name}, toCommandValue(value))
 }
 
 /**
@@ -358,7 +350,12 @@ export async function group<T>(name: string, fn: () => Promise<T>): Promise<T> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function saveState(name: string, value: any): void {
-  issueCommand('save-state', {name}, value)
+  const filePath = process.env['GITHUB_STATE'] || ''
+  if (filePath) {
+    return issueFileCommand('STATE', prepareKeyValueMessage(name, value))
+  }
+
+  issueCommand('save-state', {name}, toCommandValue(value))
 }
 
 /**
